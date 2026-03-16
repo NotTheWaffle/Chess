@@ -18,7 +18,7 @@ public final class ChessGame extends Game{
 
 	public ChessGame(byte humanColor, boolean flip){
 		super(256, 256);
-		spriteSet = new Sprites("Indexed", "Crude2");
+		spriteSet = new Sprites("Clean", "Crude2");
 		gameState = new GameState();
 		moves = new ArrayList<>();
 		moveGenerator = new MoveGenerator(gameState);

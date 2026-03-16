@@ -1,15 +1,15 @@
 import java.util.List;
 
 public class MoveGenerator {
-	GameState gameState;
+	public final GameState gameState;
 	public MoveGenerator(GameState gameState){
 		this.gameState = gameState;
 	}
 	
 
-	public static GameState makeMove(Move move, GameState initialGameState){
+	public GameState makeMove(Move move){
 		
-		GameState upcomingGameState = new GameState(initialGameState);
+		GameState upcomingGameState = new GameState(gameState);
 
 		if (move.getOriginIndex() == 0 || move.getTargetIndex() == 0) upcomingGameState.whiteQueenCastle = false;
 		if (move.getOriginIndex() == 7 || move.getTargetIndex() == 7) upcomingGameState.whiteKingCastle = false;
@@ -117,6 +117,7 @@ public class MoveGenerator {
 			if (move.getOriginIndex() == temporaryKingPosition){
 				temporaryKingPosition = move.getTargetIndex();
 			}
+			//TODO make a try-move and untry move function because of stupid en passanting out of check
 			gameState.board.setTile(move.getTargetIndex(), originTile);
 			gameState.board.setTile(move.getOriginIndex(), Tile.BLANK);
 			if (isAttacked(temporaryKingPosition, (byte)(color^Tile.COLOR))){
