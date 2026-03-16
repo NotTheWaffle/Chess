@@ -1,24 +1,22 @@
 
 import java.security.SecureRandom;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Random;
 
 
 public class GameState{
-	List<Long> hashes;
-	Board board;
-	byte player;
-	int enpassantIndex;
-	boolean whiteKingCastle;
-	boolean whiteQueenCastle;
-	boolean blackKingCastle;
-	boolean blackQueenCastle;
-	int whiteKingIndex;
-	int blackKingIndex;
+	public Board board;
+	public byte player;
+	public int enpassantIndex;
+	public boolean whiteKingCastle;
+	public boolean whiteQueenCastle;
+	public boolean blackKingCastle;
+	public boolean blackQueenCastle;
+	// not neccessary, just for faster lookups
+	public transient int whiteKingIndex;
+	public transient int blackKingIndex;
 
-	private static final long[] ZOBRIST_HASHING = generateZobristHashingValues();
-	private static long[] generateZobristHashingValues(){
+	private static final long[] ZOBRIST_HASHING_RANDOMS = generateZobristHashingRandoms();
+	private static long[] generateZobristHashingRandoms(){
 		Random random = new SecureRandom();
 		long[] result = new long[14*64];
 		for (int i = 0; i < 14*64; i++){
@@ -27,7 +25,7 @@ public class GameState{
 		for (int i = 0; i < result.length; i++){
 			for (int j = i+1; j < result.length; j++){
 				if (result[i] == result[j]){
-					System.out.println(i+" equals "+j);
+					System.out.println(i+" equals "+j+" (very bad)");
 				}
 			}
 		}
@@ -42,18 +40,18 @@ public class GameState{
 				lookupIndex = ((tile&Tile.PIECE)-1)+6*((tile&Tile.COLOR)>>>3);
 				lookupIndex += i * 12;
 			}
-			hashCode ^= ZOBRIST_HASHING[lookupIndex];
+			hashCode ^= ZOBRIST_HASHING_RANDOMS[lookupIndex];
 		}
-		hashCode ^= ZOBRIST_HASHING[enpassantIndex+12*64];
+		hashCode ^= ZOBRIST_HASHING_RANDOMS[enpassantIndex+12*64];
 		if (player == Tile.WHITE){
-			hashCode ^= ZOBRIST_HASHING[13*64+1];
+			hashCode ^= ZOBRIST_HASHING_RANDOMS[13*64+1];
 		} else {
-			hashCode ^= ZOBRIST_HASHING[13*64+0];
+			hashCode ^= ZOBRIST_HASHING_RANDOMS[13*64+0];
 		}
-		if (whiteKingCastle) hashCode ^= ZOBRIST_HASHING[13*64+2];
-		if (whiteQueenCastle) hashCode ^= ZOBRIST_HASHING[13*64+3];
-		if (blackKingCastle) hashCode ^= ZOBRIST_HASHING[13*64+4];
-		if (blackQueenCastle) hashCode ^= ZOBRIST_HASHING[13*64+5];
+		if (whiteKingCastle) hashCode ^= ZOBRIST_HASHING_RANDOMS[13*64+2];
+		if (whiteQueenCastle) hashCode ^= ZOBRIST_HASHING_RANDOMS[13*64+3];
+		if (blackKingCastle) hashCode ^= ZOBRIST_HASHING_RANDOMS[13*64+4];
+		if (blackQueenCastle) hashCode ^= ZOBRIST_HASHING_RANDOMS[13*64+5];
 		return hashCode;
 	}
 
@@ -69,8 +67,6 @@ public class GameState{
 				whiteKingIndex = i;
 			}
 		}
-		hashes = new ArrayList<>();
-		hashes.add(generateZobristHash());
 	}
 	public GameState(GameState gameState){
 		this.board = new Board(gameState.board);
@@ -82,34 +78,33 @@ public class GameState{
 		this.blackQueenCastle = gameState.blackQueenCastle;
 		this.whiteKingIndex = gameState.whiteKingIndex;
 		this.blackKingIndex = gameState.blackKingIndex;
-		this.hashes = new ArrayList<>(); hashes.addAll(gameState.hashes);
 	}
 	public void makeMove(Move move){
-		if (move.origin() == 0 || move.target() == 0) whiteQueenCastle = false;
-		if (move.origin() == 7 || move.target() == 7) whiteKingCastle = false;
-		if (move.origin() == 4 || move.target() == 4) whiteKingCastle = whiteQueenCastle = false;
+		if (move.getOriginIndex() == 0 || move.getTargetIndex() == 0) whiteQueenCastle = false;
+		if (move.getOriginIndex() == 7 || move.getTargetIndex() == 7) whiteKingCastle = false;
+		if (move.getOriginIndex() == 4 || move.getTargetIndex() == 4) whiteKingCastle = whiteQueenCastle = false;
 		
-		if (move.origin() == 56 || move.target() == 56) blackQueenCastle = false;
-		if (move.origin() == 63 || move.target() == 63) blackKingCastle = false;
-		if (move.origin() == 60 || move.target() == 60) blackKingCastle = blackQueenCastle = false;
+		if (move.getOriginIndex() == 56 || move.getTargetIndex() == 56) blackQueenCastle = false;
+		if (move.getOriginIndex() == 63 || move.getTargetIndex() == 63) blackKingCastle = false;
+		if (move.getOriginIndex() == 60 || move.getTargetIndex() == 60) blackKingCastle = blackQueenCastle = false;
 		
-		board.setTile(move.target(), board.getTile(move.origin()));
-		if (move.flag() != Move.FLAGLESS){
-			int flag = move.flag();
+		board.setTile(move.getTargetIndex(), board.getTile(move.getOriginIndex()));
+		if (move.getFlag() != Move.FLAGLESS){
+			int flag = move.getFlag();
 			if (flag == Move.PAWN_DOUBLE){
 				int d = -8;
-				if (Tile.color(board.getTile(move.origin())) == Tile.WHITE){
+				if (Tile.color(board.getTile(move.getOriginIndex())) == Tile.WHITE){
 					d = 8;
 				}
-				enpassantIndex = move.target() - d;
+				enpassantIndex = move.getTargetIndex() - d;
 			} else {
 				enpassantIndex = -1;
 				if (flag == Move.EN_PASSANT_CAPTURE){
 					int d = -8;
-					if (Tile.color(board.getTile(move.origin())) == Tile.WHITE){
+					if (Tile.color(board.getTile(move.getOriginIndex())) == Tile.WHITE){
 						d = 8;
 					}
-					board.setTile(move.target() - d, Tile.BLANK);
+					board.setTile(move.getTargetIndex() - d, Tile.BLANK);
 				} else if ((flag & Move.CASTLING) > 0){
 					switch (flag){
 						case Move.BLACK_KING_CASTLING -> {
@@ -130,18 +125,18 @@ public class GameState{
 						}
 					}
 				} else if ((flag & Move.PROMOTION) > 0){
-					board.setTile(move.target(), Move.getPiece(flag)|Tile.color(board.getTile(move.origin())));
+					board.setTile(move.getTargetIndex(), Move.getPiece(flag)|Tile.color(board.getTile(move.getOriginIndex())));
 				}
 			}
 		} else {
 			enpassantIndex = -1;
 		}
-		board.setTile(move.origin(), Tile.BLANK);
+		board.setTile(move.getOriginIndex(), Tile.BLANK);
 		player = (byte)(player ^ Tile.COLOR);
 		
-		if (move.origin() == whiteKingIndex) whiteKingIndex = move.target();
-		if (move.origin() == blackKingIndex) blackKingIndex = move.target();
-		hashes.add(generateZobristHash());
+		if (move.getOriginIndex() == whiteKingIndex) whiteKingIndex = move.getTargetIndex();
+		if (move.getOriginIndex() == blackKingIndex) blackKingIndex = move.getTargetIndex();
+		
 	}
 	@Override
 	public int hashCode(){

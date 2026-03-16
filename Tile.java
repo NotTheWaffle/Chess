@@ -1,6 +1,4 @@
 public final class Tile {
-
-	
 	public static final byte PIECE  = 0b111;
 
 	public static final byte BLANK  = 0b000; //0
@@ -15,8 +13,8 @@ public final class Tile {
 	
 	public static final byte COLOR  = 0b1000;
 
-	public static final byte WHITE  = 0b1000;
-	public static final byte BLACK  = 0b0000;
+	public static final byte BLACK  = 0b0000; //0
+	public static final byte WHITE  = 0b1000; //8
 
 	
 	public static final byte BLACK_PAWN   = BLACK|PAWN;   // 1
@@ -27,11 +25,11 @@ public final class Tile {
 	public static final byte BLACK_KING   = BLACK|KING;   // 6
 	
 	public static final byte WHITE_PAWN   = WHITE|PAWN;   // 9
-	public static final byte WHITE_ROOK   = WHITE|ROOK;   // a
-	public static final byte WHITE_KNIGHT = WHITE|KNIGHT; // b
-	public static final byte WHITE_BISHOP = WHITE|BISHOP; // c
-	public static final byte WHITE_QUEEN  = WHITE|QUEEN;  // d
-	public static final byte WHITE_KING   = WHITE|KING;   // e
+	public static final byte WHITE_ROOK   = WHITE|ROOK;   // 10
+	public static final byte WHITE_KNIGHT = WHITE|KNIGHT; // 11
+	public static final byte WHITE_BISHOP = WHITE|BISHOP; // 12
+	public static final byte WHITE_QUEEN  = WHITE|QUEEN;  // 13
+	public static final byte WHITE_KING   = WHITE|KING;   // 14
 
 	private Tile(){}
 	public static byte piece(byte tile){
