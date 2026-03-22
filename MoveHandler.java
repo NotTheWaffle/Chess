@@ -1,23 +1,30 @@
+import java.util.ArrayList;
 import java.util.List;
 
-public class MoveGenerator {
+public class MoveHandler {
 	public final GameState gameState;
-	public MoveGenerator(GameState gameState){
+	public List<Long> moveHistory;
+	public MoveHandler(GameState gameState){
 		this.gameState = gameState;
+		moveHistory = new ArrayList<>();
 	}
 	
-
-	public GameState makeMove(Move move){
+	/**
+	 * Makes a deep copy of the current gamestate and returns it after performing the specified move
+	 * @param move 
+	 * @return the gamestate inside the MoveGenerator after performing the move
+	 */
+	public GameState makeMoveClone(Move move){
 		
 		GameState upcomingGameState = new GameState(gameState);
 
-		if (move.getOriginIndex() == 0 || move.getTargetIndex() == 0) upcomingGameState.whiteQueenCastle = false;
-		if (move.getOriginIndex() == 7 || move.getTargetIndex() == 7) upcomingGameState.whiteKingCastle = false;
-		if (move.getOriginIndex() == 4 || move.getTargetIndex() == 4) upcomingGameState.whiteKingCastle = upcomingGameState.whiteQueenCastle = false;
+		if (move.getOriginIndex() == 0 || move.getTargetIndex() == 0) upcomingGameState.castlingRights &= 0b1101;
+		if (move.getOriginIndex() == 7 || move.getTargetIndex() == 7) upcomingGameState.castlingRights &= 0b1110;
+		if (move.getOriginIndex() == 4 || move.getTargetIndex() == 4) upcomingGameState.castlingRights &= 0b1100;
 		
-		if (move.getOriginIndex() == 56 || move.getTargetIndex() == 56) upcomingGameState.blackQueenCastle = false;
-		if (move.getOriginIndex() == 63 || move.getTargetIndex() == 63) upcomingGameState.blackKingCastle = false;
-		if (move.getOriginIndex() == 60 || move.getTargetIndex() == 60) upcomingGameState.blackKingCastle = upcomingGameState.blackQueenCastle = false;
+		if (move.getOriginIndex() == 56 || move.getTargetIndex() == 56) upcomingGameState.castlingRights &= 0b0111;
+		if (move.getOriginIndex() == 63 || move.getTargetIndex() == 63) upcomingGameState.castlingRights &= 0b1011;
+		if (move.getOriginIndex() == 60 || move.getTargetIndex() == 60) upcomingGameState.castlingRights &= 0b0011;
 		
 		upcomingGameState.board.setTile(move.getTargetIndex(), upcomingGameState.board.getTile(move.getOriginIndex()));
 		if (move.getFlag() != Move.FLAGLESS){
@@ -27,7 +34,7 @@ public class MoveGenerator {
 				if (Tile.color(upcomingGameState.board.getTile(move.getOriginIndex())) == Tile.WHITE){
 					d = 8;
 				}
-				upcomingGameState.enpassantIndex = move.getTargetIndex() - d;
+				upcomingGameState.enpassantIndex = (byte) (move.getTargetIndex() - d);
 			} else {
 				upcomingGameState.enpassantIndex = -1;
 				if (flag == Move.EN_PASSANT_CAPTURE){
@@ -65,13 +72,85 @@ public class MoveGenerator {
 		upcomingGameState.board.setTile(move.getOriginIndex(), Tile.BLANK);
 		upcomingGameState.player = (byte)(upcomingGameState.player ^ Tile.COLOR);
 		
-		if (move.getOriginIndex() == upcomingGameState.whiteKingIndex) upcomingGameState.whiteKingIndex = move.getTargetIndex();
-		if (move.getOriginIndex() == upcomingGameState.blackKingIndex) upcomingGameState.blackKingIndex = move.getTargetIndex();
+		if (move.getOriginIndex() == upcomingGameState.whiteKingIndex) upcomingGameState.whiteKingIndex = (byte) move.getTargetIndex();
+		if (move.getOriginIndex() == upcomingGameState.blackKingIndex) upcomingGameState.blackKingIndex = (byte) move.getTargetIndex();
 
 		return upcomingGameState;
 	}
 
-	public void addLegalMoveForColor(byte color, List<Move> moves){
+	public void tryMove(Move move){
+		long reversableMove = ((long) gameState.board.getTile(move.getTargetIndex()) << 48) | ((long) (gameState.enpassantIndex & 0xff) << 40) | ((long) gameState.castlingRights << 32) | (long) move.data;
+		moveHistory.add(reversableMove);
+		gameState.makeMove(move);
+	}
+	public void untryMove(){
+		
+		gameState.player ^= Tile.COLOR;
+		long reversableMove = moveHistory.removeLast();
+		Move move = new Move((int) reversableMove);
+		byte castlingRights = (byte) ((reversableMove >>> 32) & 0xff);
+		byte enpassantIndex = (byte) ((reversableMove >>> 40) & 0xff);
+		byte takenTile      = (byte) ((reversableMove >>> 48) & 0xff);
+		gameState.castlingRights = castlingRights;
+		gameState.enpassantIndex = enpassantIndex;
+		int originIndex = move.getOriginIndex();
+		int targetIndex = move.getTargetIndex();
+		
+		if (move.getFlag() == Move.FLAGLESS){
+			gameState.board.setTile(originIndex, gameState.board.getTile(targetIndex));
+			gameState.board.setTile(targetIndex, takenTile);
+		} else {
+			int flag = move.getFlag();
+			if ((flag & Move.PROMOTION) > 0){
+				gameState.board.setTile(originIndex, Tile.PAWN | (gameState.player ^ Tile.COLOR));
+				gameState.board.setTile(targetIndex, takenTile);
+			} else if ((flag & Move.CASTLING) > 0){
+				switch (flag){
+					case Move.WHITE_KING_CASTLING -> {
+						gameState.board.setTile(4, Tile.WHITE_KING);
+						gameState.board.setTile(5, Tile.BLANK);
+						gameState.board.setTile(6, Tile.BLANK);
+						gameState.board.setTile(7, Tile.WHITE_ROOK);
+					}
+					case Move.WHITE_QUEEN_CASTLING -> {
+						gameState.board.setTile(0, Tile.WHITE_ROOK);
+						gameState.board.setTile(2, Tile.BLANK);
+						gameState.board.setTile(3, Tile.BLANK);
+						gameState.board.setTile(4, Tile.WHITE_KING);
+					}
+					case Move.BLACK_KING_CASTLING -> {
+						gameState.board.setTile(60, Tile.BLACK_KING);
+						gameState.board.setTile(61, Tile.BLANK);
+						gameState.board.setTile(62, Tile.BLANK);
+						gameState.board.setTile(63, Tile.BLACK_ROOK);
+					}
+					case Move.BLACK_QUEEN_CASTLING -> {
+						gameState.board.setTile(56, Tile.BLACK_ROOK);
+						gameState.board.setTile(58, Tile.BLANK);
+						gameState.board.setTile(59, Tile.BLANK);
+						gameState.board.setTile(60, Tile.BLACK_KING);
+					}
+				}
+			} else if (flag == Move.EN_PASSANT_CAPTURE){
+				int direction = -8;
+				if (gameState.player == Tile.WHITE){
+					direction = 8;
+				}
+				int movingPlayer = gameState.player;
+				gameState.board.setTile(originIndex, Tile.PAWN | movingPlayer);
+				gameState.board.setTile(targetIndex, Tile.BLANK);
+				gameState.board.setTile(targetIndex + direction, Tile.PAWN | gameState.player);
+			} else if (flag == Move.PAWN_DOUBLE){
+				gameState.board.setTile(originIndex, gameState.board.getTile(targetIndex));
+				gameState.board.setTile(targetIndex, Tile.BLANK);
+			}
+		}
+	}
+
+	public void addLegalMoves(List<Move> moves){
+		addLegalMovesForColor(gameState.player, moves);
+	}
+	public void addLegalMovesForColor(byte color, List<Move> moves){
 		for (int i = 0; i < 64; i++){
 			byte tile = gameState.board.getTile(i);
 			if (Tile.piece(tile) == Tile.BLANK) continue;
@@ -307,19 +386,19 @@ public class MoveGenerator {
 		// castling
 		if (color == Tile.WHITE){
 			if (!isAttacked(4, Tile.BLACK)){
-				if (gameState.whiteQueenCastle && Tile.piece(gameState.board.getTile(1)) == Tile.BLANK && Tile.piece(gameState.board.getTile(2)) == Tile.BLANK && Tile.piece(gameState.board.getTile(3)) == Tile.BLANK && !isAttacked(3, Tile.BLACK)){
+				if ((gameState.castlingRights & 0b0010) > 0 && Tile.piece(gameState.board.getTile(1)) == Tile.BLANK && Tile.piece(gameState.board.getTile(2)) == Tile.BLANK && Tile.piece(gameState.board.getTile(3)) == Tile.BLANK && !isAttacked(3, Tile.BLACK)){
 					moves.add(new Move(4, 0, 2, 0, Move.WHITE_QUEEN_CASTLING));
 				}
-				if (gameState.whiteKingCastle && Tile.piece(gameState.board.getTile(5)) == Tile.BLANK && Tile.piece(gameState.board.getTile(6)) == Tile.BLANK && !isAttacked(5, Tile.BLACK)){
+				if ((gameState.castlingRights & 0b0001) > 0 && Tile.piece(gameState.board.getTile(5)) == Tile.BLANK && Tile.piece(gameState.board.getTile(6)) == Tile.BLANK && !isAttacked(5, Tile.BLACK)){
 					moves.add(new Move(4, 0, 6, 0, Move.WHITE_KING_CASTLING));
 				}
 			}
 		} else {
 			if (!isAttacked(60, Tile.WHITE)){
-				if (gameState.blackQueenCastle && Tile.piece(gameState.board.getTile(57)) == Tile.BLANK && Tile.piece(gameState.board.getTile(58)) == Tile.BLANK && Tile.piece(gameState.board.getTile(59)) == Tile.BLANK && !isAttacked(59, Tile.WHITE)){
+				if ((gameState.castlingRights & 0b1000) > 0 && Tile.piece(gameState.board.getTile(57)) == Tile.BLANK && Tile.piece(gameState.board.getTile(58)) == Tile.BLANK && Tile.piece(gameState.board.getTile(59)) == Tile.BLANK && !isAttacked(59, Tile.WHITE)){
 					moves.add(new Move(4, 7, 2, 7, Move.BLACK_QUEEN_CASTLING));
 				}
-				if (gameState.blackKingCastle && Tile.piece(gameState.board.getTile(61)) == Tile.BLANK && Tile.piece(gameState.board.getTile(62)) == Tile.BLANK && !isAttacked(61, Tile.WHITE)){
+				if ((gameState.castlingRights & 0b0100) > 0 && Tile.piece(gameState.board.getTile(61)) == Tile.BLANK && Tile.piece(gameState.board.getTile(62)) == Tile.BLANK && !isAttacked(61, Tile.WHITE)){
 					moves.add(new Move(4, 7, 6, 7, Move.BLACK_KING_CASTLING));
 				}
 			}

@@ -5,16 +5,18 @@ import java.util.List;
 public class Agent {
 	private final TranspositionTable tTable;
 	public final int depth;
+	private final static int CHECKMATE = -1_000_000;
+	private final static int STALEMATE = 0;
 	public Agent(int depth){
 		this.depth = depth;
 		tTable = new TranspositionTable();
 	}
 	public Move findBestMove(GameState initialGameState){
 		List<Move> moves = new ArrayList<>();
-		MoveGenerator moveGenerator = new MoveGenerator(initialGameState);
-		moveGenerator.addLegalMoveForColor(initialGameState.player, moves);
-		
-		int bestEvaluation = Integer.MIN_VALUE;
+		MoveHandler moveHandler = new MoveHandler(initialGameState);
+		moveHandler.addLegalMovesForColor(initialGameState.player, moves);
+
+		int bestEvaluation = -1_000_000_000;
 		if (moves.isEmpty()){
 			return new Move(0, 0);
 		}
@@ -28,15 +30,73 @@ public class Agent {
 			}
 		}
 		for (Move move : sorted){
-			GameState gameState = moveGenerator.makeMove(move);
+			GameState gameState = moveHandler.makeMoveClone(move);
+		//	moveGenerator.tryMove(move);
 			int evaluation = -evaluatePosition(gameState, depth, Integer.MIN_VALUE, Integer.MAX_VALUE);
+		//	moveGenerator.untryMove();
 			if (evaluation > bestEvaluation){
 				bestEvaluation = evaluation;
 				bestMove = move;
 			}
+			System.out.println(move.toPGNString(initialGameState.board)+":"+evaluation);
 		}
 		tTable.updatedata(initialGameState, bestEvaluation, depth, bestMove);
+		System.out.println("Current Evaluation:"+evaluatePosition(initialGameState, depth, Integer.MIN_VALUE, Integer.MAX_VALUE));
+		System.out.println("Choice: ("+bestMove.toPGNString(initialGameState.board)+":"+bestEvaluation+")");
 		return bestMove;
+	}
+	public int evaluatePosition(MoveHandler moveHandler, int depth, int alpha, int beta){
+		if (depth == 0) return relativeEvaluation(moveHandler.gameState.board, moveHandler.gameState.player);
+		if (tTable.contains(moveHandler.gameState, depth)){
+			return tTable.getData(moveHandler.gameState).evaluation;
+		}
+		List<Move> moves = new ArrayList<>();
+		moveHandler.addLegalMoves(moves);
+		int bestEvaluation = -1_000_000_000;
+
+		// return checkmate and stalemate conditions
+		if (moves.isEmpty()){
+			if (moveHandler.gameState.player == Tile.WHITE){
+				if (!moveHandler.isAttacked(moveHandler.gameState.whiteKingIndex, Tile.BLACK)){
+					bestEvaluation = STALEMATE;
+				} else {
+					bestEvaluation = CHECKMATE+this.depth-depth;
+				}
+			} else {
+				if (!moveHandler.isAttacked(moveHandler.gameState.blackKingIndex, Tile.WHITE)){
+					bestEvaluation = STALEMATE;
+				} else {
+					bestEvaluation = CHECKMATE+this.depth-depth;
+				}
+			}
+			tTable.updatedata(moveHandler.gameState, bestEvaluation, depth, null);
+			return bestEvaluation;
+		}
+		List<Move> sorted = new ArrayList<>();
+		// place the captures at the start of the list
+		for (Move move : moves){
+			if (Tile.piece(moveHandler.gameState.board.getTile(move.getTargetIndex())) != Tile.BLANK){
+				sorted.addFirst(move);
+			} else {
+				sorted.addLast(move);
+			}
+		}
+		for (Move move : sorted){
+			moveHandler.tryMove(move);
+			int evaluation = -evaluatePosition(moveHandler, depth-1, -beta, -alpha);
+			moveHandler.untryMove();
+			if (evaluation > bestEvaluation){
+				bestEvaluation = evaluation;
+			}
+			if (bestEvaluation > alpha){
+				alpha = bestEvaluation;
+			}
+			if (alpha >= beta){
+				break;
+			}
+		}
+		tTable.updatedata(moveHandler.gameState, bestEvaluation, depth, null);
+		return bestEvaluation;
 	}
 	public int evaluatePosition(GameState gameState, int depth, int alpha, int beta){
 		if (depth == 0) return relativeEvaluation(gameState.board, gameState.player);
@@ -44,23 +104,27 @@ public class Agent {
 			return tTable.getData(gameState).evaluation;
 		}
 		List<Move> moves = new ArrayList<>();
-		MoveGenerator gen = new MoveGenerator(gameState);
-		gen.addLegalMoveForColor(gameState.player, moves);
-		int bestEvaluation = -1_000_000;
+		MoveHandler gen = new MoveHandler(gameState);
+		gen.addLegalMovesForColor(gameState.player, moves);
+		int bestEvaluation = -1_000_000_000;
 
 		// return -1_000_000 or 0 if its checkmate or stalemate
 		if (moves.isEmpty()){
 			if (gen.gameState.player == Tile.WHITE){
 				if (!gen.isAttacked(gen.gameState.whiteKingIndex, Tile.BLACK)){
-					bestEvaluation = 0;
+					bestEvaluation = STALEMATE;
+				} else {
+					bestEvaluation = CHECKMATE+this.depth-depth;
 				}
 			} else {
 				if (!gen.isAttacked(gen.gameState.blackKingIndex, Tile.WHITE)){
-					bestEvaluation = 0;
+					bestEvaluation = STALEMATE;
+				} else {
+					bestEvaluation = CHECKMATE+this.depth-depth;
 				}
 			}
 			tTable.updatedata(gameState, bestEvaluation, depth, null);
-			return -1_000_000+this.depth-depth;
+			return bestEvaluation;
 		}
 		List<Move> sorted = new ArrayList<>();
 		// place the captures at the start of the list
@@ -72,8 +136,10 @@ public class Agent {
 			}
 		}
 		for (Move move : sorted){
-			GameState nextGameState = gen.makeMove(move);
+			GameState nextGameState = gen.makeMoveClone(move);
+		//	gen.tryMove(move);
 			int evaluation = -evaluatePosition(nextGameState, depth-1, -beta, -alpha);
+		//	gen.untryMove();
 			if (evaluation > bestEvaluation){
 				bestEvaluation = evaluation;
 			}

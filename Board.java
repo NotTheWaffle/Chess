@@ -95,7 +95,7 @@ public class Board {
 			for (int x = 0; x < 8; x++){
 				result.append(PIECE_SYMBOLS[getTile(x, y)]);
 			}
-			if (y > 0) result.append('\n');
+			result.append('\n');
 		}
 		return result.toString();
 	}

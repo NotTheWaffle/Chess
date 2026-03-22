@@ -102,4 +102,20 @@ public class Move {
 	public String toString(){
 		return getOriginIndex()+" to "+getTargetIndex()+"("+flagMeaning(getFlag())+")";
 	}
+	public String toPGNString(Board board){
+		int rank = getTargetY();
+		int file = getTargetX();
+		int piece = board.getTile(getOriginIndex()) & Tile.PIECE;
+		String pieceC;
+		pieceC = switch (piece){
+			case Tile.PAWN -> "";
+			case Tile.ROOK -> "R";
+			case Tile.KNIGHT -> "N";
+			case Tile.BISHOP -> "B";
+			case Tile.QUEEN -> "Q";
+			case Tile.KING -> "K";
+			default -> "";
+		};
+		return pieceC+"abcdefgh".charAt(file)+(rank+1);
+	}
 }

@@ -4,41 +4,42 @@ import java.util.ArrayList;
 import java.util.List;
 
 public final class ChessGame extends Game{
-	public final byte humanColor;
 	private final boolean rotatedRender;
 	private final GameState gameState;
 	private final List<Move> moves;
-	private final MoveGenerator moveGenerator;
+	private final MoveHandler moveHandler;
+
 	private boolean promoting;
 	private byte promotingColor;
 	private List<Move> promotions;
-	private Move lastMove;
-	private final Agent aiPlayer;
-	private final Sprites spriteSet;
 
-	public ChessGame(byte humanColor, boolean flip){
+	private Move lastMove;
+	private final Agent playerWhite;
+	private final Agent playerBlack;
+	private final Sprites sprites;
+	public ChessGame(boolean whiteBot, boolean blackBot, boolean rotate){
+		this(whiteBot, blackBot, rotate, null);
+	}
+	public ChessGame(boolean whiteBot, boolean blackBot, boolean rotate, String fenString){
 		super(256, 256);
-		spriteSet = new Sprites("Clean", "Crude2");
-		gameState = new GameState();
+		sprites = new Sprites("Indexed", "Clean");
+		gameState = fenString == null ? new GameState() : new GameState(fenString);
 		moves = new ArrayList<>();
-		moveGenerator = new MoveGenerator(gameState);
+		moveHandler = new MoveHandler(gameState);
 		promoting = false;
 		promotingColor = 0;
 		promotions = new ArrayList<>();
 		lastMove = null;
-		this.humanColor = humanColor;
-		boolean rotatedRenderTemp = true;
-		if (humanColor == Tile.BLACK){
-			rotatedRenderTemp = false;
-			callAgentPlay();
-		}
-		rotatedRender = rotatedRenderTemp ^ flip;
-		aiPlayer = new Agent(4);
+		playerWhite = whiteBot ? new Agent(4) : null;
+		playerBlack = blackBot ? new Agent(4) : null;
+		callAgentPlay();
+		rotatedRender = rotate;
 	}
 	@Override
 	public void tick(){}
 	@Override
 	public void onMouseDown(){
+		System.out.println("mouse down");
 		int tileX = input.mouseX/32;
 		int tileY = input.mouseY/32;
 		if (!rotatedRender){
@@ -58,17 +59,19 @@ public final class ChessGame extends Game{
 
 		for (Move move : moves){
 			if (move.getTargetIndex() == mouseIndex){
+				System.out.println("playing a move...");
 				return;
 			}
 		}
 		moves.clear();
-		if ((gameState.board.getTile(mouseIndex) & Tile.COLOR) == humanColor && gameState.player == humanColor){
-			moveGenerator.addLegalMovesForTile(mouseIndex, moves);
+		if ((gameState.board.getTile(mouseIndex) & Tile.COLOR) == gameState.player && ((playerWhite == null && gameState.player == Tile.WHITE) || (playerBlack == null && gameState.player == Tile.BLACK))){
+			moveHandler.addLegalMovesForTile(mouseIndex, moves);
 		}
 		render();
 	}
 	@Override
 	public void onMouseUp(){
+		System.out.println("mouse up");
 		int tileX = input.mouseX/32;
 		int tileY = input.mouseY/32;
 		if (!rotatedRender){
@@ -127,16 +130,27 @@ public final class ChessGame extends Game{
 	}
 	public void render(){
 		window.render();
-	} 
+	}
 	public void callAgentPlay(){
+		Agent player = null;
+		if (playerWhite != null && gameState.player == Tile.WHITE){
+			player = playerWhite;
+		} else if (playerBlack != null && gameState.player == Tile.BLACK){
+			player = playerBlack;
+		}
+		if (player == null) return;
+		final Agent playerF = player;
 		Thread thread = new Thread(() -> {
-			try {Thread.sleep(100);} catch (InterruptedException e){}
+			System.out.println("bot thinking");
+			try {Thread.sleep(500);} catch (InterruptedException e){}
 			long start = System.nanoTime();
-			Move move = aiPlayer.findBestMove(gameState);
+			Move move = playerF.findBestMove(gameState);
 			System.out.println((System.nanoTime()-start)/1_000_000.0);
 			lastMove = move;
 			gameState.makeMove(lastMove);
+			callAgentPlay();
 			render();
+			System.out.println("bot done thinking");
 		});
 		thread.start();
 	}
@@ -158,14 +172,15 @@ public final class ChessGame extends Game{
 	public void updateFrame(Graphics2D g2d){
 		Board board = gameState.board;
 		if (rotatedRender){
-			g2d.drawImage(spriteSet.BOARD_WHITE, 0, 0, null);
+			g2d.drawImage(sprites.BOARD_WHITE, 0, 0, null);
 		} else {
-			g2d.drawImage(spriteSet.BOARD_BLACK, 0, 0, null);
+			g2d.drawImage(sprites.BOARD_BLACK, 0, 0, null);
 		}
 		for (int x = 0; x < 8; x++){
 			for (int y = 0; y < 8; y++){
 				byte piece = board.getTile(x, y);
-				g2d.drawImage(spriteSet.getImage(piece), transformX(x), transformY(y), null);
+				g2d.drawImage(sprites.getImage(piece), transformX(x), transformY(y), null);
+			//	g2d.drawString(piece+" ", transformX(x), transformY(y)+32);
 			}
 		}
 		// promotion dialogue
@@ -181,10 +196,10 @@ public final class ChessGame extends Game{
 				g2d.fillRect(transformX(dx), transformY(dy)-96, 32, 128);
 				m = -1;
 			}
-			g2d.drawImage(spriteSet.getImage((byte) (promotingColor|Move.getPiece(promotions.get(0).getFlag()))), transformX(dx), transformY(dy)*32, null);
-			g2d.drawImage(spriteSet.getImage((byte) (promotingColor|Move.getPiece(promotions.get(1).getFlag()))), transformX(dx), transformY(dy)*32+32*m, null);
-			g2d.drawImage(spriteSet.getImage((byte) (promotingColor|Move.getPiece(promotions.get(2).getFlag()))), transformX(dx), transformY(dy)*32+64*m, null);
-			g2d.drawImage(spriteSet.getImage((byte) (promotingColor|Move.getPiece(promotions.get(3).getFlag()))), transformX(dx), transformY(dy)*32+96*m, null);
+			g2d.drawImage(sprites.getImage((byte) (promotingColor|Move.getPiece(promotions.get(0).getFlag()))), transformX(dx), transformY(dy)*32, null);
+			g2d.drawImage(sprites.getImage((byte) (promotingColor|Move.getPiece(promotions.get(1).getFlag()))), transformX(dx), transformY(dy)*32+32*m, null);
+			g2d.drawImage(sprites.getImage((byte) (promotingColor|Move.getPiece(promotions.get(2).getFlag()))), transformX(dx), transformY(dy)*32+64*m, null);
+			g2d.drawImage(sprites.getImage((byte) (promotingColor|Move.getPiece(promotions.get(3).getFlag()))), transformX(dx), transformY(dy)*32+96*m, null);
 			return;
 		}
 		// show previous move arrow
@@ -198,7 +213,7 @@ public final class ChessGame extends Game{
 		}
 		// show possible moves
 		for (Move move : moves){
-			g2d.setColor(spriteSet.COLORS[board.getTile(move.getOriginIndex())].darker());
+			g2d.setColor(sprites.COLORS[board.getTile(move.getOriginIndex())].darker());
 			int dx = move.getTargetX();
 			int dy = move.getTargetY();
 			g2d.fillOval(transformX(dx)+8, transformY(dy)+8, 16, 16);

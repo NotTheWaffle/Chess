@@ -6,14 +6,11 @@ import java.util.Random;
 public class GameState{
 	public Board board;
 	public byte player;
-	public int enpassantIndex;
-	public boolean whiteKingCastle;
-	public boolean whiteQueenCastle;
-	public boolean blackKingCastle;
-	public boolean blackQueenCastle;
+	public byte enpassantIndex;
+	public byte castlingRights;
 	// not neccessary, just for faster lookups
-	public transient int whiteKingIndex;
-	public transient int blackKingIndex;
+	public transient byte whiteKingIndex;
+	public transient byte blackKingIndex;
 
 	private static final long[] ZOBRIST_HASHING_RANDOMS = generateZobristHashingRandoms();
 	private static long[] generateZobristHashingRandoms(){
@@ -48,10 +45,10 @@ public class GameState{
 		} else {
 			hashCode ^= ZOBRIST_HASHING_RANDOMS[13*64+0];
 		}
-		if (whiteKingCastle) hashCode ^= ZOBRIST_HASHING_RANDOMS[13*64+2];
-		if (whiteQueenCastle) hashCode ^= ZOBRIST_HASHING_RANDOMS[13*64+3];
-		if (blackKingCastle) hashCode ^= ZOBRIST_HASHING_RANDOMS[13*64+4];
-		if (blackQueenCastle) hashCode ^= ZOBRIST_HASHING_RANDOMS[13*64+5];
+		if ((castlingRights & 0b0001) > 0) hashCode ^= ZOBRIST_HASHING_RANDOMS[13*64+2];
+		if ((castlingRights & 0b0010) > 0) hashCode ^= ZOBRIST_HASHING_RANDOMS[13*64+3];
+		if ((castlingRights & 0b0100) > 0) hashCode ^= ZOBRIST_HASHING_RANDOMS[13*64+4];
+		if ((castlingRights & 0b1000) > 0) hashCode ^= ZOBRIST_HASHING_RANDOMS[13*64+5];
 		return hashCode;
 	}
 
@@ -59,8 +56,45 @@ public class GameState{
 		board = new Board();
 		player = Tile.WHITE;
 		enpassantIndex = -1;
-		whiteKingCastle = whiteQueenCastle = blackKingCastle = blackQueenCastle = true;
-		for (int i = 0; i < 64; i++){
+		castlingRights = 0b1111;
+		for (byte i = 0; i < 64; i++){
+			if (board.getTile(i) == Tile.BLACK_KING){
+				blackKingIndex = i;
+			} else if (board.getTile(i) == Tile.WHITE_KING){
+				whiteKingIndex = i;
+			}
+		}
+	}
+	public GameState(String fenString){
+		board = new Board(fenString);
+
+		String playerToMove = fenString.split(" ")[1];
+		player = playerToMove.equals("w") ? Tile.WHITE : Tile.BLACK;
+		
+		String castling = fenString.split(" ")[2];
+		castlingRights = 0b0000;
+		// qkQK
+		if (castling.contains("K")){
+			castlingRights |= 0b0001;
+		}
+		if (castling.contains("Q")){
+			castlingRights |= 0b0010;
+		}
+		if (castling.contains("k")){
+			castlingRights |= 0b0100;
+		}
+		if (castling.contains("q")){
+			castlingRights |= 0b1000;
+		}
+
+		String enpassant = fenString.split(" ")[3];
+		if (enpassant.equals("-")){
+			enpassantIndex = -1;
+		} else {
+			enpassantIndex = (byte) (enpassant.charAt(0)-'a'+8*(enpassant.charAt(1)-'1'));
+		}
+		
+		for (byte i = 0; i < 64; i++){
 			if (board.getTile(i) == Tile.BLACK_KING){
 				blackKingIndex = i;
 			} else if (board.getTile(i) == Tile.WHITE_KING){
@@ -72,21 +106,18 @@ public class GameState{
 		this.board = new Board(gameState.board);
 		this.player = gameState.player;
 		this.enpassantIndex = gameState.enpassantIndex;
-		this.whiteKingCastle = gameState.whiteKingCastle;
-		this.whiteQueenCastle = gameState.whiteQueenCastle;
-		this.blackKingCastle = gameState.blackKingCastle;
-		this.blackQueenCastle = gameState.blackQueenCastle;
+		this.castlingRights = gameState.castlingRights;
 		this.whiteKingIndex = gameState.whiteKingIndex;
 		this.blackKingIndex = gameState.blackKingIndex;
 	}
 	public void makeMove(Move move){
-		if (move.getOriginIndex() == 0 || move.getTargetIndex() == 0) whiteQueenCastle = false;
-		if (move.getOriginIndex() == 7 || move.getTargetIndex() == 7) whiteKingCastle = false;
-		if (move.getOriginIndex() == 4 || move.getTargetIndex() == 4) whiteKingCastle = whiteQueenCastle = false;
+		if (move.getOriginIndex() == 0 || move.getTargetIndex() == 0) castlingRights &= 0b1101;	//white queen
+		if (move.getOriginIndex() == 7 || move.getTargetIndex() == 7) castlingRights &= 0b1110;	//white king
+		if (move.getOriginIndex() == 4 || move.getTargetIndex() == 4) castlingRights &= 0b1100;
 		
-		if (move.getOriginIndex() == 56 || move.getTargetIndex() == 56) blackQueenCastle = false;
-		if (move.getOriginIndex() == 63 || move.getTargetIndex() == 63) blackKingCastle = false;
-		if (move.getOriginIndex() == 60 || move.getTargetIndex() == 60) blackKingCastle = blackQueenCastle = false;
+		if (move.getOriginIndex() == 56 || move.getTargetIndex() == 56) castlingRights &= 0b0111;	//black queen
+		if (move.getOriginIndex() == 63 || move.getTargetIndex() == 63) castlingRights &= 0b1011;	//black king
+		if (move.getOriginIndex() == 60 || move.getTargetIndex() == 60) castlingRights &= 0b0011;
 		
 		board.setTile(move.getTargetIndex(), board.getTile(move.getOriginIndex()));
 		if (move.getFlag() != Move.FLAGLESS){
@@ -96,7 +127,7 @@ public class GameState{
 				if (Tile.color(board.getTile(move.getOriginIndex())) == Tile.WHITE){
 					d = 8;
 				}
-				enpassantIndex = move.getTargetIndex() - d;
+				enpassantIndex = (byte) (move.getTargetIndex() - d);
 			} else {
 				enpassantIndex = -1;
 				if (flag == Move.EN_PASSANT_CAPTURE){
@@ -134,8 +165,8 @@ public class GameState{
 		board.setTile(move.getOriginIndex(), Tile.BLANK);
 		player = (byte)(player ^ Tile.COLOR);
 		
-		if (move.getOriginIndex() == whiteKingIndex) whiteKingIndex = move.getTargetIndex();
-		if (move.getOriginIndex() == blackKingIndex) blackKingIndex = move.getTargetIndex();
+		if (move.getOriginIndex() == whiteKingIndex) whiteKingIndex = (byte) move.getTargetIndex();
+		if (move.getOriginIndex() == blackKingIndex) blackKingIndex = (byte) move.getTargetIndex();
 		
 	}
 	@Override
@@ -146,9 +177,19 @@ public class GameState{
 	public boolean equals(Object o){
 		if (o == this) return true;
 		if (o instanceof GameState g){
-			return g.board.equals(board) && g.blackKingCastle == blackKingCastle && g.whiteKingCastle == whiteKingCastle && g.blackQueenCastle == blackQueenCastle && g.whiteQueenCastle == whiteQueenCastle && g.player == player && g.enpassantIndex == enpassantIndex;
+			return g.board.equals(board) && g.castlingRights == castlingRights && g.player == player && g.enpassantIndex == enpassantIndex;
 		} else {
 			return false;
 		}
+	}
+	@Override
+	public String toString(){
+		StringBuilder result = new StringBuilder();
+		String p = player == Tile.WHITE ? "White" : "Black";
+		result.append("Turn:"+p);
+		result.append("\nEn passant:"+enpassantIndex);
+		result.append("\nCastling:"+Integer.toBinaryString(castlingRights));
+		result.append("\n"+board.toString());
+		return result.toString();
 	}
 }
