@@ -11,45 +11,44 @@ public class Agent {
 		this.depth = depth;
 		tTable = new TranspositionTable();
 	}
-	public Move findBestMove(GameState initialGameState){
+	public Move findBestMove(GameState gameState){
 		List<Move> moves = new ArrayList<>();
-		MoveHandler moveHandler = new MoveHandler(initialGameState);
-		moveHandler.addLegalMovesForColor(initialGameState.player, moves);
+		MoveHandler moveHandler = new MoveHandler(gameState);
+		moveHandler.addLegalMoves(moves);
 
 		int bestEvaluation = -1_000_000_000;
 		if (moves.isEmpty()){
-			return new Move(0, 0);
+			System.out.println("No available moves");
+			return null;
 		}
 		Move bestMove = new Move(0, 0);
 		List<Move> sorted = new ArrayList<>();
 		for (Move move : moves){
-			if (Tile.piece(initialGameState.board.getTile(move.getTargetIndex())) != Tile.BLANK){
+			if (Tile.piece(gameState.board.getTile(move.getTargetIndex())) != Tile.BLANK){
 				sorted.addFirst(move);
 			} else {
 				sorted.addLast(move);
 			}
 		}
 		for (Move move : sorted){
-			GameState gameState = moveHandler.makeMoveClone(move);
-		//	moveGenerator.tryMove(move);
-			int evaluation = -evaluatePosition(gameState, depth, Integer.MIN_VALUE, Integer.MAX_VALUE);
-		//	moveGenerator.untryMove();
+			GameState newGamestate = moveHandler.makeMoveClone(move);
+			//moveHandler.tryMove(move);
+			int evaluation = -evaluatePosition(newGamestate, depth, Integer.MIN_VALUE, Integer.MAX_VALUE);
+			//moveHandler.untryMove();
 			if (evaluation > bestEvaluation){
 				bestEvaluation = evaluation;
 				bestMove = move;
 			}
-			System.out.println(move.toPGNString(initialGameState.board)+":"+evaluation);
+			System.out.println(move.toPGNString(gameState.board)+":"+evaluation);
 		}
-		tTable.updatedata(initialGameState, bestEvaluation, depth, bestMove);
-		System.out.println("Current Evaluation:"+evaluatePosition(initialGameState, depth, Integer.MIN_VALUE, Integer.MAX_VALUE));
-		System.out.println("Choice: ("+bestMove.toPGNString(initialGameState.board)+":"+bestEvaluation+")");
+		tTable.updatedata(gameState, bestEvaluation, depth, bestMove);
+		System.out.println("Current Evaluation:"+evaluatePosition(gameState, depth, Integer.MIN_VALUE, Integer.MAX_VALUE));
+		System.out.println("Choice: ("+bestMove.toPGNString(gameState.board)+":"+bestEvaluation+")");
 		return bestMove;
 	}
 	public int evaluatePosition(MoveHandler moveHandler, int depth, int alpha, int beta){
 		if (depth == 0) return relativeEvaluation(moveHandler.gameState.board, moveHandler.gameState.player);
-		if (tTable.contains(moveHandler.gameState, depth)){
-			return tTable.getData(moveHandler.gameState).evaluation;
-		}
+		
 		List<Move> moves = new ArrayList<>();
 		moveHandler.addLegalMoves(moves);
 		int bestEvaluation = -1_000_000_000;
@@ -69,7 +68,6 @@ public class Agent {
 					bestEvaluation = CHECKMATE+this.depth-depth;
 				}
 			}
-			tTable.updatedata(moveHandler.gameState, bestEvaluation, depth, null);
 			return bestEvaluation;
 		}
 		List<Move> sorted = new ArrayList<>();
@@ -95,7 +93,6 @@ public class Agent {
 				break;
 			}
 		}
-		tTable.updatedata(moveHandler.gameState, bestEvaluation, depth, null);
 		return bestEvaluation;
 	}
 	public int evaluatePosition(GameState gameState, int depth, int alpha, int beta){

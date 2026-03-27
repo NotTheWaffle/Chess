@@ -2,18 +2,18 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class MoveHandler {
+	public static int movesTried =0;
+	public static int movesuntried = 0;
 	public final GameState gameState;
 	public List<Long> moveHistory;
 	public MoveHandler(GameState gameState){
 		this.gameState = gameState;
 		moveHistory = new ArrayList<>();
 	}
-	
-	/**
-	 * Makes a deep copy of the current gamestate and returns it after performing the specified move
-	 * @param move 
-	 * @return the gamestate inside the MoveGenerator after performing the move
-	 */
+	public void makeMove(Move move){
+		tryMove(move);
+		moveHistory.clear();
+	}
 	public GameState makeMoveClone(Move move){
 		
 		GameState upcomingGameState = new GameState(gameState);
@@ -79,12 +79,14 @@ public class MoveHandler {
 	}
 
 	public void tryMove(Move move){
+		movesTried++;
 		long reversableMove = ((long) gameState.board.getTile(move.getTargetIndex()) << 48) | ((long) (gameState.enpassantIndex & 0xff) << 40) | ((long) gameState.castlingRights << 32) | (long) move.data;
 		moveHistory.add(reversableMove);
 		gameState.makeMove(move);
 	}
 	public void untryMove(){
-		
+		if (moveHistory.isEmpty()) return;
+		movesuntried++;
 		gameState.player ^= Tile.COLOR;
 		long reversableMove = moveHistory.removeLast();
 		Move move = new Move((int) reversableMove);
@@ -143,6 +145,13 @@ public class MoveHandler {
 			} else if (flag == Move.PAWN_DOUBLE){
 				gameState.board.setTile(originIndex, gameState.board.getTile(targetIndex));
 				gameState.board.setTile(targetIndex, Tile.BLANK);
+			}
+		}
+		for (byte i = 0; i < 64; i++){
+			if (gameState.board.getTile(i) == Tile.BLACK_KING){
+				gameState.blackKingIndex = i;
+			} else if (gameState.board.getTile(i) == Tile.WHITE_KING){
+				gameState.whiteKingIndex = i;
 			}
 		}
 	}
@@ -208,7 +217,7 @@ public class MoveHandler {
 		}
 	}
 	
-	public void addPawnMoves(int x, int y, byte color, List<Move> moves){
+	private void addPawnMoves(int x, int y, byte color, List<Move> moves){
 		if (y == 0 || y == 7) return;
 		int dy;
 		int dy2;
@@ -262,7 +271,7 @@ public class MoveHandler {
 			}
 		}
 	}
-	public void addRookMoves(int x, int y, byte color, List<Move> moves){
+	private void addRookMoves(int x, int y, byte color, List<Move> moves){
 		byte targetTile;
 		// east branch
 		for (int dx = x+1; dx < 8; dx++){
@@ -306,7 +315,7 @@ public class MoveHandler {
 			break;
 		}
 	}
-	public void addKnightMoves(int x, int y, byte color, List<Move> moves){
+	private void addKnightMoves(int x, int y, byte color, List<Move> moves){
 		byte target;
 		// vertical rectangle
 		for (int dx = x-1; dx <= x+1; dx += 2){
@@ -331,7 +340,7 @@ public class MoveHandler {
 			}
 		}
 	}
-	public void addBishopMoves(int x, int y, byte color, List<Move> moves){
+	private void addBishopMoves(int x, int y, byte color, List<Move> moves){
 		byte target;
 		for (int dx = x+1, dy = y+1; dx >= 0 && dx < 8 && dy >= 0 && dy < 8; dx++, dy++){
 			target = gameState.board.getTile(dx, dy);
@@ -370,7 +379,7 @@ public class MoveHandler {
 			break;
 		}
 	}
-	public void addKingMoves(int x, int y, byte color, List<Move> moves){
+	private void addKingMoves(int x, int y, byte color, List<Move> moves){
 		byte target;
 		for (int dx = x-1; dx <= x+1; dx++){
 			if (dx < 0 || dx >= 8) continue;
@@ -404,7 +413,7 @@ public class MoveHandler {
 			}
 		}
 	}
-	public void addQueenMoves(int x, int y, byte color, List<Move> moves){
+	private void addQueenMoves(int x, int y, byte color, List<Move> moves){
 		addRookMoves(x, y, color, moves);
 		addBishopMoves(x, y, color, moves);
 	}

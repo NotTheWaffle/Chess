@@ -22,7 +22,7 @@ public final class ChessGame extends Game{
 	}
 	public ChessGame(boolean whiteBot, boolean blackBot, boolean rotate, String fenString){
 		super(256, 256);
-		sprites = new Sprites("Indexed", "Clean");
+		sprites = new Sprites("Clean", "Clean");
 		gameState = fenString == null ? new GameState() : new GameState(fenString);
 		moves = new ArrayList<>();
 		moveHandler = new MoveHandler(gameState);
@@ -32,14 +32,17 @@ public final class ChessGame extends Game{
 		lastMove = null;
 		playerWhite = whiteBot ? new Agent(4) : null;
 		playerBlack = blackBot ? new Agent(4) : null;
-		callAgentPlay();
 		rotatedRender = rotate;
+	}
+	public void start(){
+		callAgentPlay();
 	}
 	@Override
 	public void tick(){}
 	@Override
 	public void onMouseDown(){
-		System.out.println("mouse down");
+		System.out.println(MoveHandler.movesTried+"-"+MoveHandler.movesuntried);
+		render();
 		int tileX = input.mouseX/32;
 		int tileY = input.mouseY/32;
 		if (!rotatedRender){
@@ -48,10 +51,10 @@ public final class ChessGame extends Game{
 		if (rotatedRender){
 			tileY = 7-tileY;
 		}
-		if (tileX < 0) tileX = 0;
-		if (tileX > 7) tileX = 7;
-		if (tileY < 0) tileY = 0;
-		if (tileY > 7) tileY = 7;
+		if (tileX < 0) return;
+		if (tileX > 7) return;
+		if (tileY < 0) return;
+		if (tileY > 7) return;
 		int mouseIndex = tileX + tileY*8;
 
 		if (promoting) return;
@@ -59,7 +62,6 @@ public final class ChessGame extends Game{
 
 		for (Move move : moves){
 			if (move.getTargetIndex() == mouseIndex){
-				System.out.println("playing a move...");
 				return;
 			}
 		}
@@ -71,7 +73,6 @@ public final class ChessGame extends Game{
 	}
 	@Override
 	public void onMouseUp(){
-		System.out.println("mouse up");
 		int tileX = input.mouseX/32;
 		int tileY = input.mouseY/32;
 		if (!rotatedRender){
@@ -80,14 +81,17 @@ public final class ChessGame extends Game{
 		if (rotatedRender){
 			tileY = 7-tileY;
 		}
-		if (tileX < 0) tileX = 0;
-		if (tileX > 7) tileX = 7;
-		if (tileY < 0) tileY = 0;
-		if (tileY > 7) tileY = 7;
+		if (tileX < 0) return;
+		if (tileX > 7) return;
+		if (tileY < 0) return;
+		if (tileY > 7) return;
 		int mouseIndex = tileX + tileY*8;
 		
 		if (promoting){
 			int index;
+			if (tileX != promotions.get(0).getTargetX()){
+				return;
+			}
 			if (promotingColor == Tile.WHITE){
 				if (tileY < 4){
 					return;
@@ -131,7 +135,7 @@ public final class ChessGame extends Game{
 	public void render(){
 		window.render();
 	}
-	public void callAgentPlay(){
+	private void callAgentPlay(){
 		Agent player = null;
 		if (playerWhite != null && gameState.player == Tile.WHITE){
 			player = playerWhite;
@@ -139,13 +143,13 @@ public final class ChessGame extends Game{
 			player = playerBlack;
 		}
 		if (player == null) return;
+
 		final Agent playerF = player;
 		Thread thread = new Thread(() -> {
 			System.out.println("bot thinking");
-			try {Thread.sleep(500);} catch (InterruptedException e){}
 			long start = System.nanoTime();
 			Move move = playerF.findBestMove(gameState);
-			System.out.println((System.nanoTime()-start)/1_000_000.0);
+			System.out.println("Bot thought for: "+(System.nanoTime()-start)/1_000_000.0+"ms");
 			lastMove = move;
 			gameState.makeMove(lastMove);
 			callAgentPlay();
@@ -180,7 +184,6 @@ public final class ChessGame extends Game{
 			for (int y = 0; y < 8; y++){
 				byte piece = board.getTile(x, y);
 				g2d.drawImage(sprites.getImage(piece), transformX(x), transformY(y), null);
-			//	g2d.drawString(piece+" ", transformX(x), transformY(y)+32);
 			}
 		}
 		// promotion dialogue
@@ -196,10 +199,10 @@ public final class ChessGame extends Game{
 				g2d.fillRect(transformX(dx), transformY(dy)-96, 32, 128);
 				m = -1;
 			}
-			g2d.drawImage(sprites.getImage((byte) (promotingColor|Move.getPiece(promotions.get(0).getFlag()))), transformX(dx), transformY(dy)*32, null);
-			g2d.drawImage(sprites.getImage((byte) (promotingColor|Move.getPiece(promotions.get(1).getFlag()))), transformX(dx), transformY(dy)*32+32*m, null);
-			g2d.drawImage(sprites.getImage((byte) (promotingColor|Move.getPiece(promotions.get(2).getFlag()))), transformX(dx), transformY(dy)*32+64*m, null);
-			g2d.drawImage(sprites.getImage((byte) (promotingColor|Move.getPiece(promotions.get(3).getFlag()))), transformX(dx), transformY(dy)*32+96*m, null);
+			g2d.drawImage(sprites.getImage((byte) (promotingColor|Move.getPiece(promotions.get(0).getFlag()))), transformX(dx), transformY(dy), null);
+			g2d.drawImage(sprites.getImage((byte) (promotingColor|Move.getPiece(promotions.get(1).getFlag()))), transformX(dx), transformY(dy)+32*m, null);
+			g2d.drawImage(sprites.getImage((byte) (promotingColor|Move.getPiece(promotions.get(2).getFlag()))), transformX(dx), transformY(dy)+64*m, null);
+			g2d.drawImage(sprites.getImage((byte) (promotingColor|Move.getPiece(promotions.get(3).getFlag()))), transformX(dx), transformY(dy)+96*m, null);
 			return;
 		}
 		// show previous move arrow
@@ -216,7 +219,7 @@ public final class ChessGame extends Game{
 			g2d.setColor(sprites.COLORS[board.getTile(move.getOriginIndex())].darker());
 			int dx = move.getTargetX();
 			int dy = move.getTargetY();
-			g2d.fillOval(transformX(dx)+8, transformY(dy)+8, 16, 16);
+			g2d.fillRect(transformX(dx)+12, transformY(dy)+12, 8, 8);
 		}
 	}
 	@Override

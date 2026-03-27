@@ -55,6 +55,9 @@ public class Window {
 	public int getHeight(){
 		return frame.getHeight()-39;
 	}
+	public void resize(int width, int height){
+		frame.setSize(width+16, height+31+8);
+	}
 
 	public void render(){
 		gamePanel.repaint();
