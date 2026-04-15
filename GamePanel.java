@@ -62,6 +62,7 @@ public class GamePanel extends JPanel{
 			@Override
 			public void keyPressed(final KeyEvent e){
 				if (e.getKeyCode() < 256) input.keys[e.getKeyCode()] = true;
+				game.onKeyDown(e.getKeyCode());
 			}
 			@Override
 			public void keyReleased(final KeyEvent e){

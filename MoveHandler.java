@@ -2,8 +2,6 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class MoveHandler {
-	public static int movesTried =0;
-	public static int movesuntried = 0;
 	public final GameState gameState;
 	public List<Long> moveHistory;
 	public MoveHandler(GameState gameState){
@@ -15,86 +13,28 @@ public class MoveHandler {
 		moveHistory.clear();
 	}
 	public GameState makeMoveClone(Move move){
-		
-		GameState upcomingGameState = new GameState(gameState);
-
-		if (move.getOriginIndex() == 0 || move.getTargetIndex() == 0) upcomingGameState.castlingRights &= 0b1101;
-		if (move.getOriginIndex() == 7 || move.getTargetIndex() == 7) upcomingGameState.castlingRights &= 0b1110;
-		if (move.getOriginIndex() == 4 || move.getTargetIndex() == 4) upcomingGameState.castlingRights &= 0b1100;
-		
-		if (move.getOriginIndex() == 56 || move.getTargetIndex() == 56) upcomingGameState.castlingRights &= 0b0111;
-		if (move.getOriginIndex() == 63 || move.getTargetIndex() == 63) upcomingGameState.castlingRights &= 0b1011;
-		if (move.getOriginIndex() == 60 || move.getTargetIndex() == 60) upcomingGameState.castlingRights &= 0b0011;
-		
-		upcomingGameState.board.setTile(move.getTargetIndex(), upcomingGameState.board.getTile(move.getOriginIndex()));
-		if (move.getFlag() != Move.FLAGLESS){
-			int flag = move.getFlag();
-			if (flag == Move.PAWN_DOUBLE){
-				int d = -8;
-				if (Tile.color(upcomingGameState.board.getTile(move.getOriginIndex())) == Tile.WHITE){
-					d = 8;
-				}
-				upcomingGameState.enpassantIndex = (byte) (move.getTargetIndex() - d);
-			} else {
-				upcomingGameState.enpassantIndex = -1;
-				if (flag == Move.EN_PASSANT_CAPTURE){
-					int d = -8;
-					if (Tile.color(upcomingGameState.board.getTile(move.getOriginIndex())) == Tile.WHITE){
-						d = 8;
-					}
-					upcomingGameState.board.setTile(move.getTargetIndex() - d, Tile.BLANK);
-				} else if ((flag & Move.CASTLING) > 0){
-					switch (flag){
-						case Move.BLACK_KING_CASTLING -> {
-							upcomingGameState.board.setTile(61, Tile.BLACK_ROOK);
-							upcomingGameState.board.setTile(63, Tile.BLANK);
-						}
-						case Move.BLACK_QUEEN_CASTLING -> {
-							upcomingGameState.board.setTile(59, Tile.BLACK_ROOK);
-							upcomingGameState.board.setTile(56, Tile.BLANK);
-						}
-						case Move.WHITE_KING_CASTLING -> {
-							upcomingGameState.board.setTile(5, Tile.WHITE_ROOK);
-							upcomingGameState.board.setTile(7, Tile.BLANK);
-						}
-						case Move.WHITE_QUEEN_CASTLING -> {
-							upcomingGameState.board.setTile(3, Tile.WHITE_ROOK);
-							upcomingGameState.board.setTile(0, Tile.BLANK);
-						}
-					}
-				} else if ((flag & Move.PROMOTION) > 0){
-					upcomingGameState.board.setTile(move.getTargetIndex(), Move.getPiece(flag)|Tile.color(upcomingGameState.board.getTile(move.getOriginIndex())));
-				}
-			}
-		} else {
-			upcomingGameState.enpassantIndex = -1;
-		}
-		upcomingGameState.board.setTile(move.getOriginIndex(), Tile.BLANK);
-		upcomingGameState.player = (byte)(upcomingGameState.player ^ Tile.COLOR);
-		
-		if (move.getOriginIndex() == upcomingGameState.whiteKingIndex) upcomingGameState.whiteKingIndex = (byte) move.getTargetIndex();
-		if (move.getOriginIndex() == upcomingGameState.blackKingIndex) upcomingGameState.blackKingIndex = (byte) move.getTargetIndex();
-
-		return upcomingGameState;
+		GameState copy = new GameState(gameState);
+		copy.makeMove(move);
+		return copy;
 	}
 
 	public void tryMove(Move move){
-		movesTried++;
-		long reversableMove = ((long) gameState.board.getTile(move.getTargetIndex()) << 48) | ((long) (gameState.enpassantIndex & 0xff) << 40) | ((long) gameState.castlingRights << 32) | (long) move.data;
+		long reversableMove = ((long)(gameState.halfmoveClock & 0xff) << 56) | ((long) gameState.board.getTile(move.getTargetIndex()) << 48) | ((long) (gameState.enpassantIndex & 0xff) << 40) | ((long) gameState.castlingRights << 32) | (long) move.data;
 		moveHistory.add(reversableMove);
 		gameState.makeMove(move);
 	}
 	public void untryMove(){
 		if (moveHistory.isEmpty()) return;
-		movesuntried++;
 		gameState.player ^= Tile.COLOR;
 		long reversableMove = moveHistory.removeLast();
 		Move move = new Move((int) reversableMove);
 		byte castlingRights = (byte) ((reversableMove >>> 32) & 0xff);
 		byte enpassantIndex = (byte) ((reversableMove >>> 40) & 0xff);
 		byte takenTile      = (byte) ((reversableMove >>> 48) & 0xff);
+		int halfmoveClock   = (int) ((reversableMove >>> 56) & 0xff);
 		gameState.castlingRights = castlingRights;
 		gameState.enpassantIndex = enpassantIndex;
+		gameState.halfmoveClock = halfmoveClock;
 		int originIndex = move.getOriginIndex();
 		int targetIndex = move.getTargetIndex();
 		
@@ -104,7 +44,7 @@ public class MoveHandler {
 		} else {
 			int flag = move.getFlag();
 			if ((flag & Move.PROMOTION) > 0){
-				gameState.board.setTile(originIndex, Tile.PAWN | (gameState.player ^ Tile.COLOR));
+				gameState.board.setTile(originIndex, Tile.PAWN | gameState.player);
 				gameState.board.setTile(targetIndex, takenTile);
 			} else if ((flag & Move.CASTLING) > 0){
 				switch (flag){
@@ -138,26 +78,38 @@ public class MoveHandler {
 				if (gameState.player == Tile.WHITE){
 					direction = 8;
 				}
-				int movingPlayer = gameState.player;
-				gameState.board.setTile(originIndex, Tile.PAWN | movingPlayer);
+				gameState.board.setTile(originIndex, Tile.PAWN | gameState.player);
 				gameState.board.setTile(targetIndex, Tile.BLANK);
-				gameState.board.setTile(targetIndex + direction, Tile.PAWN | gameState.player);
+				gameState.board.setTile(targetIndex - direction, Tile.PAWN | (gameState.player ^ Tile.COLOR));
 			} else if (flag == Move.PAWN_DOUBLE){
 				gameState.board.setTile(originIndex, gameState.board.getTile(targetIndex));
 				gameState.board.setTile(targetIndex, Tile.BLANK);
 			}
 		}
-		for (byte i = 0; i < 64; i++){
-			if (gameState.board.getTile(i) == Tile.BLACK_KING){
-				gameState.blackKingIndex = i;
-			} else if (gameState.board.getTile(i) == Tile.WHITE_KING){
-				gameState.whiteKingIndex = i;
+		// Restore king positions: if the king was moved (target == current king index), restore to origin
+		if (move.getTargetIndex() == gameState.whiteKingIndex) gameState.whiteKingIndex = (byte) originIndex;
+		if (move.getTargetIndex() == gameState.blackKingIndex) gameState.blackKingIndex = (byte) originIndex;
+		// For castling, the king was placed at specific squares above, so fix king index explicitly
+		if ((move.getFlag() & Move.CASTLING) > 0) {
+			switch (move.getFlag()) {
+				case Move.WHITE_KING_CASTLING, Move.WHITE_QUEEN_CASTLING -> gameState.whiteKingIndex = 4;
+				case Move.BLACK_KING_CASTLING, Move.BLACK_QUEEN_CASTLING -> gameState.blackKingIndex = 60;
 			}
 		}
 	}
 
 	public void addLegalMoves(List<Move> moves){
 		addLegalMovesForColor(gameState.player, moves);
+	}
+	public void addCaptureMoves(List<Move> captures){
+		List<Move> allMoves = new ArrayList<>();
+		addLegalMoves(allMoves);
+		for (Move move : allMoves) {
+			if (Tile.piece(gameState.board.getTile(move.getTargetIndex())) != Tile.BLANK
+				|| move.getFlag() == Move.EN_PASSANT_CAPTURE) {
+				captures.add(move);
+			}
+		}
 	}
 	public void addLegalMovesForColor(byte color, List<Move> moves){
 		for (int i = 0; i < 64; i++){
@@ -175,7 +127,6 @@ public class MoveHandler {
 		byte piece = Tile.piece(gameState.board.getTile(idx));
 		byte color = Tile.color(gameState.board.getTile(idx));
 
-		int kingPos = color == Tile.WHITE ? gameState.whiteKingIndex : gameState.blackKingIndex;
 		switch (piece){
 			case Tile.PAWN -> {
 				addPawnMoves(x, y, color, moves);
@@ -197,23 +148,12 @@ public class MoveHandler {
 			}
 		}
 		for (int i = 0; i < moves.size(); i++){
-			// filter out illegal moves with checks
 			Move move = moves.get(i);
-			byte originTile = gameState.board.getTile(move.getOriginIndex());
-			byte targetTile = gameState.board.getTile(move.getTargetIndex());
-			int temporaryKingPosition = kingPos;
-			if (move.getOriginIndex() == temporaryKingPosition){
-				temporaryKingPosition = move.getTargetIndex();
-			}
-			//TODO make a try-move and untry move function because of stupid en passanting out of check
-			gameState.board.setTile(move.getTargetIndex(), originTile);
-			gameState.board.setTile(move.getOriginIndex(), Tile.BLANK);
-			if (isAttacked(temporaryKingPosition, (byte)(color^Tile.COLOR))){
-				moves.remove(i);
-				i--;
-			}
-			gameState.board.setTile(move.getOriginIndex(), originTile);
-			gameState.board.setTile(move.getTargetIndex(), targetTile);
+			tryMove(move);
+			int kp = (color == Tile.WHITE) ? gameState.whiteKingIndex : gameState.blackKingIndex;
+			boolean illegal = isAttacked(kp, (byte)(color ^ Tile.COLOR));
+			untryMove();
+			if (illegal) { moves.remove(i); i--; }
 		}
 	}
 	
@@ -395,19 +335,19 @@ public class MoveHandler {
 		// castling
 		if (color == Tile.WHITE){
 			if (!isAttacked(4, Tile.BLACK)){
-				if ((gameState.castlingRights & 0b0010) > 0 && Tile.piece(gameState.board.getTile(1)) == Tile.BLANK && Tile.piece(gameState.board.getTile(2)) == Tile.BLANK && Tile.piece(gameState.board.getTile(3)) == Tile.BLANK && !isAttacked(3, Tile.BLACK)){
+				if ((gameState.castlingRights & GameState.CR_WHITE_QUEEN) > 0 && gameState.board.getTile(0) == Tile.WHITE_ROOK && Tile.piece(gameState.board.getTile(1)) == Tile.BLANK && Tile.piece(gameState.board.getTile(2)) == Tile.BLANK && Tile.piece(gameState.board.getTile(3)) == Tile.BLANK && !isAttacked(3, Tile.BLACK)){
 					moves.add(new Move(4, 0, 2, 0, Move.WHITE_QUEEN_CASTLING));
 				}
-				if ((gameState.castlingRights & 0b0001) > 0 && Tile.piece(gameState.board.getTile(5)) == Tile.BLANK && Tile.piece(gameState.board.getTile(6)) == Tile.BLANK && !isAttacked(5, Tile.BLACK)){
+				if ((gameState.castlingRights & GameState.CR_WHITE_KING) > 0 && gameState.board.getTile(7) == Tile.WHITE_ROOK && Tile.piece(gameState.board.getTile(5)) == Tile.BLANK && Tile.piece(gameState.board.getTile(6)) == Tile.BLANK && !isAttacked(5, Tile.BLACK)){
 					moves.add(new Move(4, 0, 6, 0, Move.WHITE_KING_CASTLING));
 				}
 			}
 		} else {
 			if (!isAttacked(60, Tile.WHITE)){
-				if ((gameState.castlingRights & 0b1000) > 0 && Tile.piece(gameState.board.getTile(57)) == Tile.BLANK && Tile.piece(gameState.board.getTile(58)) == Tile.BLANK && Tile.piece(gameState.board.getTile(59)) == Tile.BLANK && !isAttacked(59, Tile.WHITE)){
+				if ((gameState.castlingRights & GameState.CR_BLACK_QUEEN) > 0 && gameState.board.getTile(56) == Tile.BLACK_ROOK && Tile.piece(gameState.board.getTile(57)) == Tile.BLANK && Tile.piece(gameState.board.getTile(58)) == Tile.BLANK && Tile.piece(gameState.board.getTile(59)) == Tile.BLANK && !isAttacked(59, Tile.WHITE)){
 					moves.add(new Move(4, 7, 2, 7, Move.BLACK_QUEEN_CASTLING));
 				}
-				if ((gameState.castlingRights & 0b0100) > 0 && Tile.piece(gameState.board.getTile(61)) == Tile.BLANK && Tile.piece(gameState.board.getTile(62)) == Tile.BLANK && !isAttacked(61, Tile.WHITE)){
+				if ((gameState.castlingRights & GameState.CR_BLACK_KING) > 0 && gameState.board.getTile(63) == Tile.BLACK_ROOK && Tile.piece(gameState.board.getTile(61)) == Tile.BLANK && Tile.piece(gameState.board.getTile(62)) == Tile.BLANK && !isAttacked(61, Tile.WHITE)){
 					moves.add(new Move(4, 7, 6, 7, Move.BLACK_KING_CASTLING));
 				}
 			}
