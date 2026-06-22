@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(wc:*)",
+      "Bash(javac:*)",
+      "Bash(where:*)",
+      "Bash(cmd /c:*)"
+    ]
+  }
+}

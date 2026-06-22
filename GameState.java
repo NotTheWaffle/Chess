@@ -4,10 +4,16 @@ import java.util.Random;
 
 
 public class GameState{
+	public static final byte CR_WHITE_KING  = 0b0001;
+	public static final byte CR_WHITE_QUEEN = 0b0010;
+	public static final byte CR_BLACK_KING  = 0b0100;
+	public static final byte CR_BLACK_QUEEN = 0b1000;
+
 	public Board board;
 	public byte player;
 	public byte enpassantIndex;
 	public byte castlingRights;
+	public int halfmoveClock;
 	// not neccessary, just for faster lookups
 	public transient byte whiteKingIndex;
 	public transient byte blackKingIndex;
@@ -18,13 +24,6 @@ public class GameState{
 		long[] result = new long[14*64];
 		for (int i = 0; i < 14*64; i++){
 			result[i] = random.nextLong();
-		}
-		for (int i = 0; i < result.length; i++){
-			for (int j = i+1; j < result.length; j++){
-				if (result[i] == result[j]){
-					System.out.println(i+" equals "+j+" (very bad)");
-				}
-			}
 		}
 		return result;
 	}
@@ -45,10 +44,10 @@ public class GameState{
 		} else {
 			hashCode ^= ZOBRIST_HASHING_RANDOMS[13*64+0];
 		}
-		if ((castlingRights & 0b0001) > 0) hashCode ^= ZOBRIST_HASHING_RANDOMS[13*64+2];
-		if ((castlingRights & 0b0010) > 0) hashCode ^= ZOBRIST_HASHING_RANDOMS[13*64+3];
-		if ((castlingRights & 0b0100) > 0) hashCode ^= ZOBRIST_HASHING_RANDOMS[13*64+4];
-		if ((castlingRights & 0b1000) > 0) hashCode ^= ZOBRIST_HASHING_RANDOMS[13*64+5];
+		if ((castlingRights & CR_WHITE_KING) > 0) hashCode ^= ZOBRIST_HASHING_RANDOMS[13*64+2];
+		if ((castlingRights & CR_WHITE_QUEEN) > 0) hashCode ^= ZOBRIST_HASHING_RANDOMS[13*64+3];
+		if ((castlingRights & CR_BLACK_KING) > 0) hashCode ^= ZOBRIST_HASHING_RANDOMS[13*64+4];
+		if ((castlingRights & CR_BLACK_QUEEN) > 0) hashCode ^= ZOBRIST_HASHING_RANDOMS[13*64+5];
 		return hashCode;
 	}
 
@@ -57,6 +56,7 @@ public class GameState{
 		player = Tile.WHITE;
 		enpassantIndex = -1;
 		castlingRights = 0b1111;
+		halfmoveClock = 0;
 		for (byte i = 0; i < 64; i++){
 			if (board.getTile(i) == Tile.BLACK_KING){
 				blackKingIndex = i;
@@ -72,20 +72,11 @@ public class GameState{
 		player = playerToMove.equals("w") ? Tile.WHITE : Tile.BLACK;
 		
 		String castling = fenString.split(" ")[2];
-		castlingRights = 0b0000;
-		// qkQK
-		if (castling.contains("K")){
-			castlingRights |= 0b0001;
-		}
-		if (castling.contains("Q")){
-			castlingRights |= 0b0010;
-		}
-		if (castling.contains("k")){
-			castlingRights |= 0b0100;
-		}
-		if (castling.contains("q")){
-			castlingRights |= 0b1000;
-		}
+		castlingRights = 0;
+		if (castling.contains("K")) castlingRights |= CR_WHITE_KING;
+		if (castling.contains("Q")) castlingRights |= CR_WHITE_QUEEN;
+		if (castling.contains("k")) castlingRights |= CR_BLACK_KING;
+		if (castling.contains("q")) castlingRights |= CR_BLACK_QUEEN;
 
 		String enpassant = fenString.split(" ")[3];
 		if (enpassant.equals("-")){
@@ -93,7 +84,10 @@ public class GameState{
 		} else {
 			enpassantIndex = (byte) (enpassant.charAt(0)-'a'+8*(enpassant.charAt(1)-'1'));
 		}
-		
+
+		String[] parts = fenString.split(" ");
+		halfmoveClock = parts.length > 4 ? Integer.parseInt(parts[4]) : 0;
+
 		for (byte i = 0; i < 64; i++){
 			if (board.getTile(i) == Tile.BLACK_KING){
 				blackKingIndex = i;
@@ -107,17 +101,23 @@ public class GameState{
 		this.player = gameState.player;
 		this.enpassantIndex = gameState.enpassantIndex;
 		this.castlingRights = gameState.castlingRights;
+		this.halfmoveClock = gameState.halfmoveClock;
 		this.whiteKingIndex = gameState.whiteKingIndex;
 		this.blackKingIndex = gameState.blackKingIndex;
 	}
 	public void makeMove(Move move){
-		if (move.getOriginIndex() == 0 || move.getTargetIndex() == 0) castlingRights &= 0b1101;	//white queen
-		if (move.getOriginIndex() == 7 || move.getTargetIndex() == 7) castlingRights &= 0b1110;	//white king
-		if (move.getOriginIndex() == 4 || move.getTargetIndex() == 4) castlingRights &= 0b1100;
-		
-		if (move.getOriginIndex() == 56 || move.getTargetIndex() == 56) castlingRights &= 0b0111;	//black queen
-		if (move.getOriginIndex() == 63 || move.getTargetIndex() == 63) castlingRights &= 0b1011;	//black king
-		if (move.getOriginIndex() == 60 || move.getTargetIndex() == 60) castlingRights &= 0b0011;
+		boolean isCapture = Tile.piece(board.getTile(move.getTargetIndex())) != Tile.BLANK
+			|| move.getFlag() == Move.EN_PASSANT_CAPTURE;
+		boolean isPawnMove = Tile.piece(board.getTile(move.getOriginIndex())) == Tile.PAWN;
+		if (isCapture || isPawnMove) halfmoveClock = 0; else halfmoveClock++;
+
+		if (move.getOriginIndex() == 0 || move.getTargetIndex() == 0) castlingRights &= ~CR_WHITE_QUEEN;
+		if (move.getOriginIndex() == 7 || move.getTargetIndex() == 7) castlingRights &= ~CR_WHITE_KING;
+		if (move.getOriginIndex() == 4 || move.getTargetIndex() == 4) castlingRights &= ~(CR_WHITE_KING | CR_WHITE_QUEEN);
+
+		if (move.getOriginIndex() == 56 || move.getTargetIndex() == 56) castlingRights &= ~CR_BLACK_QUEEN;
+		if (move.getOriginIndex() == 63 || move.getTargetIndex() == 63) castlingRights &= ~CR_BLACK_KING;
+		if (move.getOriginIndex() == 60 || move.getTargetIndex() == 60) castlingRights &= ~(CR_BLACK_KING | CR_BLACK_QUEEN);
 		
 		board.setTile(move.getTargetIndex(), board.getTile(move.getOriginIndex()));
 		if (move.getFlag() != Move.FLAGLESS){
@@ -168,6 +168,35 @@ public class GameState{
 		if (move.getOriginIndex() == whiteKingIndex) whiteKingIndex = (byte) move.getTargetIndex();
 		if (move.getOriginIndex() == blackKingIndex) blackKingIndex = (byte) move.getTargetIndex();
 		
+	}
+	public GameState makeNullMove() {
+		GameState copy = new GameState(this);
+		copy.player = (byte)(copy.player ^ Tile.COLOR);
+		copy.enpassantIndex = -1;
+		return copy;
+	}
+	public boolean isFiftyMoveRule() {
+		return halfmoveClock >= 100;
+	}
+	public boolean isInsufficientMaterial() {
+		int wN = 0, bN = 0, wB = 0, bB = 0, wBColor = -1, bBColor = -1;
+		for (int i = 0; i < 64; i++) {
+			byte tile = board.getTile(i);
+			byte piece = Tile.piece(tile);
+			if (piece == Tile.BLANK || piece == Tile.KING) continue;
+			if (piece == Tile.PAWN || piece == Tile.ROOK || piece == Tile.QUEEN) return false;
+			int sc = ((i & 7) + (i >>> 3)) & 1;
+			if (Tile.color(tile) == Tile.WHITE) {
+				if (piece == Tile.KNIGHT) wN++; else { wB++; wBColor = sc; }
+			} else {
+				if (piece == Tile.KNIGHT) bN++; else { bB++; bBColor = sc; }
+			}
+		}
+		int total = wN + bN + wB + bB;
+		if (total == 0) return true;
+		if (total == 1) return true;
+		if (wN == 0 && bN == 0 && wB == 1 && bB == 1 && wBColor == bBColor) return true;
+		return false;
 	}
 	@Override
 	public int hashCode(){

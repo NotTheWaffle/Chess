@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Chess 2.0 — 3D Volumetric Chess</title>
+  <style>
+    :root { --bg:#0a0d13; --panel:#141a26e6; --ink:#d7e0f0; --muted:#8a97b0; --line:#2a3550; --accent:#35e0ff; }
+    html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--ink);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+    #gl { display: block; width: 100vw; height: 100vh; cursor: grab; }
+    #gl:active { cursor: grabbing; }
+
+    /* top-center turn/status HUD (non-interactive) */
+    #hud { position: fixed; top: 14px; left: 50%; transform: translateX(-50%); pointer-events: none;
+      font-size: 16px; font-weight: 600; letter-spacing: .3px; padding: 7px 16px; border-radius: 20px;
+      background: #141a26b3; border: 1px solid var(--line); }
+    #hud .turn-white { color: #f0e6c8; } #hud .turn-black { color: #f0a59c; }
+
+    /* control panel (top-right) */
+    #panel { position: fixed; top: 14px; right: 14px; width: 210px; background: var(--panel);
+      border: 1px solid var(--line); border-radius: 12px; padding: 12px 13px; font-size: 13px;
+      backdrop-filter: blur(6px); box-shadow: 0 8px 30px #0008; }
+    #panel h1 { font-size: 14px; margin: 0 0 9px; letter-spacing: .4px; }
+    #panel h1 small { color: var(--muted); font-weight: 400; }
+    #panel .row { display: flex; gap: 8px; margin: 7px 0; }
+    #panel button { flex: 1; cursor: pointer; background: #20293c; color: var(--ink); border: 1px solid var(--line);
+      border-radius: 8px; padding: 8px 6px; font-size: 13px; transition: background .12s; }
+    #panel button:hover { background: #2b3650; }
+    #panel hr { border: none; border-top: 1px solid var(--line); margin: 11px 0 9px; }
+    #panel .sec { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .6px; margin-bottom: 5px; }
+    #panel label { display: flex; align-items: center; gap: 7px; margin: 5px 0; cursor: pointer; }
+    #panel input[type=range] { width: 100%; }
+    #panel select { background: #20293c; color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 3px 5px; }
+    .slider-row { display: flex; align-items: center; gap: 8px; }
+    .slider-row span { color: var(--muted); min-width: 60px; }
+    #legend { color: var(--muted); font-size: 11px; line-height: 1.5; }
+
+    /* overlays */
+    .overlay { position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
+      flex-direction: column; gap: 16px; z-index: 50; background: #05070bcc; }
+    #banner-text { font-size: 30px; font-weight: 700; }
+    #promo .card, #banner .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+      padding: 22px 26px; text-align: center; display: flex; flex-direction: column; gap: 14px; align-items: center; }
+    #promo h2 { margin: 0; font-size: 18px; }
+    #promo-buttons { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; max-width: 360px; }
+    #promo-buttons button, .overlay button { cursor: pointer; background: #25304a; color: var(--ink);
+      border: 1px solid var(--line); border-radius: 9px; padding: 10px 14px; font-size: 14px; }
+    #promo-buttons button:hover, .overlay button:hover { background: #324063; }
+    #thinking { font-size: 20px; font-weight: 600; }
+    .spinner { width: 30px; height: 30px; border: 3px solid #3a4560; border-top-color: var(--accent);
+      border-radius: 50%; animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    #error { display: none; position: fixed; top: 0; left: 0; right: 0; padding: 10px 14px;
+      background: #5b1a1a; color: #ffd9d9; font: 12px/1.4 monospace; z-index: 99; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <canvas id="gl"></canvas>
+
+  <div id="hud"><span id="hud-text" class="turn-white">White to move</span></div>
+
+  <div id="panel">
+    <h1>Chess 2.0 <small>8×8×8</small></h1>
+    <div class="row">
+      <button id="btn-newgame">New Game</button>
+      <button id="btn-undo">Undo</button>
+    </div>
+    <hr />
+    <div class="sec">Computer plays</div>
+    <label><input type="checkbox" id="ai-white" /> White</label>
+    <label><input type="checkbox" id="ai-black" /> Black</label>
+    <label>Strength
+      <select id="ai-depth">
+        <option value="1">1 (fast)</option>
+        <option value="2" selected>2</option>
+        <option value="3">3 (slow)</option>
+      </select>
+    </label>
+    <hr />
+    <div class="sec">View</div>
+    <label><input type="checkbox" id="view-slice" /> Slice to levels</label>
+    <div class="slider-row"><span>Level <b id="view-level-val">1</b></span><input type="range" id="view-level" min="1" max="8" value="1" /></div>
+    <div class="slider-row"><span>± <b id="view-range-val">0</b></span><input type="range" id="view-range" min="0" max="7" value="0" /></div>
+    <label><input type="checkbox" id="view-labels" checked /> Piece labels</label>
+    <label><input type="checkbox" id="view-fog" /> Depth fog</label>
+    <hr />
+    <div id="legend">Pieces: K Q R B N <b>U</b> P<br/>warm = White · rose = Black<br/><b>U</b> = Unicorn (triagonal)<br/>drag orbit · right-drag pan · scroll zoom</div>
+  </div>
+
+  <div id="banner" class="overlay">
+    <div class="card"><div id="banner-text">—</div><button id="banner-newgame">New Game</button></div>
+  </div>
+
+  <div id="promo" class="overlay">
+    <div class="card"><h2>Promote to…</h2><div id="promo-buttons"></div></div>
+  </div>
+
+  <div id="thinking" class="overlay">
+    <div class="spinner"></div><div>Computer is thinking…</div>
+  </div>
+
+  <div id="error"></div>
+
+  <!-- Vendored Three.js r136 (UMD global) + classic OrbitControls. Classic <script>
+       tags work from file:// (ES modules and Workers do not), so the game runs by
+       double-clicking this file with no build step and no server. -->
+  <script src="vendor/three.min.js"></script>
+  <script src="vendor/OrbitControls.js"></script>
+
+  <!-- shared namespace -->
+  <script src="src/namespace.js"></script>
+
+  <!-- engine (pure logic; also loadable in Node for tests) -->
+  <script src="src/constants.js"></script>
+  <script src="src/geometry.js"></script>
+  <script src="src/move.js"></script>
+  <script src="src/zobrist.js"></script>
+  <script src="src/board.js"></script>
+  <script src="src/setup.js"></script>
+  <script src="src/gamestate.js"></script>
+  <script src="src/attack.js"></script>
+  <script src="src/movegen.js"></script>
+  <script src="src/rules.js"></script>
+  <script src="src/agent.js"></script>
+  <script src="src/engine.js"></script>
+
+  <!-- view + interaction + ui -->
+  <script src="src/coords.js"></script>
+  <script src="src/scene.js"></script>
+  <script src="src/lattice.js"></script>
+  <script src="src/labels.js"></script>
+  <script src="src/pieceFactory.js"></script>
+  <script src="src/boardView.js"></script>
+  <script src="src/markers.js"></script>
+  <script src="src/visibility.js"></script>
+  <script src="src/picking.js"></script>
+  <script src="src/interaction.js"></script>
+  <script src="src/ui.js"></script>
+  <script src="src/ai.js"></script>
+
+  <!-- bootstrap -->
+  <script src="src/app.js"></script>
+</body>
+</html>

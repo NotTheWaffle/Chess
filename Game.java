@@ -16,5 +16,6 @@ public abstract class Game {
 	public abstract void tick();
 	public abstract void onMouseUp();
 	public abstract void onMouseDown();
+	public void onKeyDown(int keyCode){}
 	public abstract void updateFrame(final Graphics2D g2d);
 }

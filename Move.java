@@ -103,19 +103,61 @@ public class Move {
 		return getOriginIndex()+" to "+getTargetIndex()+"("+flagMeaning(getFlag())+")";
 	}
 	public String toPGNString(Board board){
+		int flag = getFlag();
+		// castling
+		if (flag == WHITE_KING_CASTLING || flag == BLACK_KING_CASTLING) return "O-O";
+		if (flag == WHITE_QUEEN_CASTLING || flag == BLACK_QUEEN_CASTLING) return "O-O-O";
+
 		int rank = getTargetY();
 		int file = getTargetX();
-		int piece = board.getTile(getOriginIndex()) & Tile.PIECE;
-		String pieceC;
-		pieceC = switch (piece){
-			case Tile.PAWN -> "";
-			case Tile.ROOK -> "R";
-			case Tile.KNIGHT -> "N";
-			case Tile.BISHOP -> "B";
-			case Tile.QUEEN -> "Q";
-			case Tile.KING -> "K";
-			default -> "";
-		};
-		return pieceC+"abcdefgh".charAt(file)+(rank+1);
+		byte originTile = board.getTile(getOriginIndex());
+		int piece = originTile & Tile.PIECE;
+		boolean isCapture = Tile.piece(board.getTile(getTargetIndex())) != Tile.BLANK
+			|| flag == EN_PASSANT_CAPTURE;
+
+		StringBuilder sb = new StringBuilder();
+		if (piece == Tile.PAWN) {
+			if (isCapture) sb.append("abcdefgh".charAt(getOriginX()));
+		} else {
+			sb.append(switch (piece){
+				case Tile.ROOK -> "R";
+				case Tile.KNIGHT -> "N";
+				case Tile.BISHOP -> "B";
+				case Tile.QUEEN -> "Q";
+				case Tile.KING -> "K";
+				default -> "";
+			});
+		}
+		if (isCapture) sb.append('x');
+		sb.append("abcdefgh".charAt(file));
+		sb.append(rank + 1);
+		// promotion
+		if ((flag & PROMOTION) > 0) {
+			sb.append('=');
+			sb.append(switch (flag){
+				case KNIGHT_PROMOTE -> "N";
+				case BISHOP_PROMOTE -> "B";
+				case ROOK_PROMOTE -> "R";
+				case QUEEN_PROMOTE -> "Q";
+				default -> "";
+			});
+		}
+		return sb.toString();
+	}
+	public String toPGNString(GameState gameState){
+		String base = toPGNString(gameState.board);
+		// check/checkmate detection
+		GameState copy = new GameState(gameState);
+		copy.makeMove(this);
+		MoveHandler handler = new MoveHandler(copy);
+		java.util.List<Move> legalMoves = new java.util.ArrayList<>();
+		handler.addLegalMoves(legalMoves);
+		int kingPos = (copy.player == Tile.WHITE) ? copy.whiteKingIndex : copy.blackKingIndex;
+		boolean inCheck = handler.isAttacked(kingPos, (byte)(copy.player ^ Tile.COLOR));
+		if (inCheck) {
+			if (legalMoves.isEmpty()) return base + "#";
+			return base + "+";
+		}
+		return base;
 	}
 }
